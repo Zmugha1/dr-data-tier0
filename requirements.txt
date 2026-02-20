@@ -1,0 +1,6 @@
+streamlit==1.40.0
+chromadb==0.5.18
+sentence-transformers==3.3.0
+pypdf2==3.0.1
+pandas==2.2.2
+requests==2.32.0
