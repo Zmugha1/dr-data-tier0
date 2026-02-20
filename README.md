@@ -12,26 +12,54 @@ Dr. Data Tier 0 is a local-first, privacy-preserving decision intelligence syste
 - **ChromaDB Vector Store** — Persistent document indexing
 - **Ollama Phi-3** — Local LLM inference via HTTP API
 
-## Quick Start
+## Quick Setup (Windows)
 
-1. **Install Ollama** and pull the Phi-3 model:
-   ```bash
-   ollama pull phi3:mini
-   ```
+### Option 1: Automated Setup
 
-2. **Create virtual environment and install dependencies:**
-   ```bash
-   python -m venv venv
-   venv\Scripts\activate   # Windows
-   pip install -r requirements.txt
-   ```
+```powershell
+# 1. Navigate to project
+cd C:\Users\zumah\Documents\dr-data-tier0
 
-3. **Run the application:**
-   ```bash
-   streamlit run app.py
-   ```
+# 2. Run setup script (installs deps + downloads model)
+py setup.py
 
-4. Open http://localhost:8501 in your browser.
+# 3. Verify installation
+py check_setup.py
+
+# 4. Run the app
+streamlit run app.py
+```
+
+### Option 2: Manual Setup
+
+```powershell
+# 1. Create virtual environment
+py -m venv venv
+
+# 2. Activate it
+.\venv\Scripts\activate
+
+# 3. Install dependencies
+py -m pip install -r requirements.txt
+
+# 4. Pre-download model (optional, speeds up first run)
+py -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-micro-v2')"
+
+# 5. Run
+streamlit run app.py
+```
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `ModuleNotFoundError: No module named 'sentence_transformers'` | Run: `py setup.py` or `py -m pip install -r requirements.txt` |
+| App stuck on "Loading BGE-Micro model" | Model is downloading (30MB). Wait 2-5 minutes or run `py setup.py` first. |
+| "Ollama connection refused" | Start Ollama: `ollama serve` (in separate terminal) |
+
+**Install Ollama** and pull Phi-3 before running: `ollama pull phi3:mini`
+
+Open http://localhost:8501 in your browser.
 
 ## Hardware Requirements
 
@@ -45,6 +73,9 @@ Dr. Data Tier 0 is a local-first, privacy-preserving decision intelligence syste
 ```
 dr-data-tier0/
 ├── app.py              # Streamlit entry point
+├── streamlit_app.py    # Streamlit Cloud entry point
+├── setup.py            # Install deps + pre-download model
+├── check_setup.py      # Verify installation
 ├── core/
 │   ├── config.py       # PII patterns, HIPAA keywords, settings
 │   ├── governance.py   # Deterministic PII redaction
