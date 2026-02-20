@@ -8,7 +8,7 @@ import sys
 
 def check() -> int:
     """Run all setup checks and return exit code."""
-    print("🔍 Dr. Data Tier 0 - Quick Check\n")
+    print("Dr. Data Tier 0 - Quick Check\n")
 
     checks = []
 
@@ -61,17 +61,17 @@ def check() -> int:
 
     all_ok = True
     for name, ok, info in checks:
-        status = "✅" if ok else "❌"
+        status = "[OK]" if ok else "[FAIL]"
         print(f"{status} {name}: {info}")
         if not ok:
             all_ok = False
 
     print()
     if all_ok:
-        print("🎉 All checks passed! Ready to run: streamlit run app.py")
+        print("All checks passed! Ready to run: streamlit run app.py")
         return 0
     else:
-        print("⚠️  Some checks failed. Run: py setup.py")
+        print("[!] Some checks failed. Run: py setup.py")
         return 1
 
 
