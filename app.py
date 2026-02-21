@@ -5,6 +5,7 @@ Zero-Cloud AI for solo practitioners.
 
 import hashlib
 import sys
+import tempfile
 import traceback
 import uuid
 from pathlib import Path
@@ -14,10 +15,12 @@ import pandas as pd
 import streamlit as st
 
 from core.audit_logger import TruthLinkLogger
+from core.config import OLLAMA_HOST
 from core.embeddings import LocalEmbedder
 from core.governance import DeterministicGovernance
 from core.llm_client import OllamaClient
 from core.vector_store import LocalVectorStore
+from core.vision_client import OllamaVisionClient
 
 
 def init_session_state() -> None:
@@ -170,6 +173,74 @@ def render_sidebar() -> None:
                 else:
                     st.sidebar.warning("Embedder or vector store not ready.")
 
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Image Upload (Beta)")
+    st.sidebar.caption("Images are analyzed by AI and indexed as text descriptions")
+
+    image_file = st.sidebar.file_uploader(
+        "Upload image for analysis",
+        type=["png", "jpg", "jpeg"],
+        key="image_uploader",
+        help="Images are processed using Ollama vision model to extract searchable text",
+    )
+
+    if image_file:
+        image_id = (image_file.name, image_file.size)
+        if image_id not in st.session_state.processed_file_ids:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(image_file.name).suffix) as tmp:
+                tmp.write(image_file.read())
+                tmp_path = Path(tmp.name)
+
+            with st.sidebar.spinner(f"Analyzing {image_file.name}..."):
+                try:
+                    vision = OllamaVisionClient()
+                    description = vision.describe_image(tmp_path)
+                    tmp_path.unlink(missing_ok=True)
+
+                    governance = get_governance()
+                    audit = get_audit_logger()
+                    description, audit_trail = governance.redact_pii(description)
+                    for entry in audit_trail:
+                        audit.log_redaction(
+                            {
+                                "rule_id": entry.rule_id,
+                                "position": entry.position,
+                                "timestamp": entry.timestamp,
+                                "original_length": entry.original_length,
+                                "replacement": entry.replacement,
+                            }
+                        )
+
+                    embedder = get_embedder()
+                    vs = get_vector_store()
+                    if embedder and vs:
+                        doc_id = f"img_{uuid.uuid4().hex[:12]}"
+                        emb = embedder.embed(description)
+                        vs.add_document(
+                            doc_id,
+                            description,
+                            {
+                                "source": image_file.name,
+                                "type": "image_description",
+                                "original_filename": image_file.name,
+                            },
+                            emb,
+                        )
+                        st.session_state.documents_loaded = True
+                        st.session_state.processed_file_ids.add(image_id)
+                        st.sidebar.success(f"Indexed: {image_file.name}")
+                        with st.sidebar.expander("Preview description"):
+                            st.caption(
+                                description[:200] + ("..." if len(description) > 200 else "")
+                            )
+                    else:
+                        st.sidebar.warning("Embedder or vector store not ready.")
+                except Exception as e:
+                    tmp_path.unlink(missing_ok=True)
+                    st.sidebar.error(f"Image analysis failed: {e}")
+                    if "llava" in str(e).lower():
+                        st.sidebar.info("Run: ollama pull llava:7b")
+
     st.sidebar.subheader("System Status")
     ollama = get_ollama_client()
     if ollama.is_available():
@@ -201,6 +272,21 @@ def render_sidebar() -> None:
         if "vector_store_error" in st.session_state and st.session_state.vector_store_error:
             with st.sidebar.expander("Vector Store Error"):
                 st.code(st.session_state.vector_store_error)
+
+    vision_available = False
+    try:
+        import requests
+
+        resp = requests.get(f"{OLLAMA_HOST}/api/tags", timeout=2)
+        models = [m.get("name", "") for m in resp.json().get("models", [])]
+        vision_available = any("llava" in m for m in models)
+    except Exception:
+        pass
+
+    if vision_available:
+        st.sidebar.success("Vision (llava): Ready")
+    else:
+        st.sidebar.info("Vision: Run 'ollama pull llava:7b' to enable")
 
 
 def main() -> None:

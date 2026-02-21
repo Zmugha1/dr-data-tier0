@@ -34,6 +34,7 @@ HIPAA_KEYWORDS: List[str] = [
 # Ollama API settings
 OLLAMA_HOST: str = "http://localhost:11434"
 MODEL_NAME: str = "phi3:mini"
+VISION_MODEL: str = "llava:7b"  # or "llava-phi3" for faster processing
 
 # ChromaDB persistence path - absolute for reliability
 CHROMA_PATH: str = str(BASE_DIR / "chroma_db")
