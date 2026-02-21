@@ -46,7 +46,7 @@ def main() -> None:
     try:
         from sentence_transformers import SentenceTransformer
 
-        SentenceTransformer("BAAI/bge-micro-v2")
+        SentenceTransformer("TaylorAI/bge-micro-v2")
         print("[OK] BGE-Micro model downloaded and cached")
     except Exception as e:
         print(f"[FAIL] Model download failed: {e}")

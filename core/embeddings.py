@@ -18,7 +18,7 @@ class LocalEmbedder:
     Produces 384-dimensional vectors.
     """
 
-    MODEL_NAME: str = "BAAI/bge-micro-v2"
+    MODEL_NAME: str = "TaylorAI/bge-micro-v2"
     DIMENSION: int = 384
     MODEL_SIZE_MB: float = 30.0
 
