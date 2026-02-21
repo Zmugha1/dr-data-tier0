@@ -2,7 +2,9 @@
 Local embedding via BGE-Micro-v2 (384 dimensions).
 """
 
-from typing import List, Union
+import os
+from pathlib import Path
+from typing import List, Optional
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -18,13 +20,38 @@ class LocalEmbedder:
 
     MODEL_NAME: str = "BAAI/bge-micro-v2"
     DIMENSION: int = 384
+    MODEL_SIZE_MB: float = 30.0
 
-    def __init__(self) -> None:
+    @classmethod
+    def is_model_cached(cls) -> bool:
+        """Check if BGE-Micro-v2 is already downloaded locally."""
+        if SentenceTransformer is None:
+            return False
+        try:
+            _ = SentenceTransformer(cls.MODEL_NAME, local_files_only=True)
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def get_cache_path(cls) -> str:
+        """Return the HuggingFace cache directory path."""
+        return os.environ.get(
+            "HF_HOME",
+            os.environ.get("HF_HUB_CACHE", str(Path.home() / ".cache" / "huggingface" / "hub")),
+        )
+
+    def __init__(self, cache_dir: Optional[str] = None, local_files_only: bool = False) -> None:
         """Load the BGE-Micro-v2 model."""
         if SentenceTransformer is None:
             raise ImportError("sentence-transformers is required. Install with: pip install sentence-transformers")
+        kwargs = {}
+        if cache_dir:
+            kwargs["cache_folder"] = cache_dir
+        if local_files_only:
+            kwargs["local_files_only"] = True
         try:
-            self._model = SentenceTransformer(self.MODEL_NAME)
+            self._model = SentenceTransformer(self.MODEL_NAME, **kwargs)
         except Exception as e:
             raise RuntimeError(f"Failed to load embedding model {self.MODEL_NAME}: {e}") from e
 

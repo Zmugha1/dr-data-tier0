@@ -4,9 +4,11 @@ Zero-Cloud AI for solo practitioners.
 """
 
 import hashlib
+import sys
+import traceback
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import pandas as pd
 import streamlit as st
@@ -44,23 +46,60 @@ def get_audit_logger() -> TruthLinkLogger:
     return st.session_state.audit_logger
 
 
-def get_embedder() -> Optional[LocalEmbedder]:
-    """Get or create embedder (lazy load)."""
+def get_embedder() -> Optional[Union[LocalEmbedder, "OllamaEmbedder"]]:
+    """Get or create embedder (lazy load). Tries LocalEmbedder, falls back to OllamaEmbedder."""
     if "embedder" not in st.session_state:
+        st.session_state.embedder = None
+        st.session_state.embedder_error = None
+        st.session_state.embedder_traceback = None
+        st.session_state.embedder_fallback = False
+
+        # Try LocalEmbedder (BGE-Micro) first
         try:
-            st.session_state.embedder = LocalEmbedder()
-        except Exception:
-            st.session_state.embedder = None
+            if not LocalEmbedder.is_model_cached():
+                with st.spinner(
+                    f"Downloading BGE-Micro-v2 (~{LocalEmbedder.MODEL_SIZE_MB:.0f}MB)... "
+                    "This may take 2-5 minutes."
+                ):
+                    st.session_state.embedder = LocalEmbedder()
+            else:
+                st.session_state.embedder = LocalEmbedder()
+        except Exception as e:
+            st.session_state.embedder_error = str(e)
+            st.session_state.embedder_traceback = traceback.format_exc()
+            # Fall back to Ollama embeddings
+            try:
+                from core.embeddings_ollama import OllamaEmbedder
+
+                st.session_state.embedder = OllamaEmbedder()
+                st.session_state.embedder_fallback = True
+                st.session_state.embedder_error = None
+                st.session_state.embedder_traceback = None
+            except Exception as ollama_err:
+                st.session_state.embedder_error = f"Local: {e}\nOllama: {ollama_err}"
+                st.session_state.embedder_traceback = traceback.format_exc()
     return st.session_state.embedder
 
 
 def get_vector_store() -> Optional[LocalVectorStore]:
     """Get or create vector store (lazy load)."""
     if "vector_store" not in st.session_state:
+        st.session_state.vector_store = None
+        st.session_state.vector_store_error = None
+        st.session_state.vector_store_traceback = None
         try:
-            st.session_state.vector_store = LocalVectorStore()
-        except Exception:
+            # Ensure embedder is initialized first (determines collection for 768 vs 384 dim)
+            _ = get_embedder()
+            collection = (
+                "dr_data_docs_ollama"
+                if st.session_state.get("embedder_fallback")
+                else None
+            )
+            st.session_state.vector_store = LocalVectorStore(collection_name=collection)
+        except Exception as e:
             st.session_state.vector_store = None
+            st.session_state.vector_store_error = str(e)
+            st.session_state.vector_store_traceback = traceback.format_exc()
     return st.session_state.vector_store
 
 
@@ -139,9 +178,29 @@ def render_sidebar() -> None:
         st.sidebar.error("Ollama: Not available (start Ollama and pull phi3:mini)")
     embedder = get_embedder()
     if embedder:
-        st.sidebar.success("Embeddings: Ready")
+        if st.session_state.get("embedder_fallback"):
+            st.sidebar.success("Embeddings: Ready (Ollama fallback)")
+        else:
+            st.sidebar.success("Embeddings: Ready")
     else:
         st.sidebar.warning("Embeddings: Failed to load")
+        if "embedder_error" in st.session_state and st.session_state.embedder_error:
+            with st.sidebar.expander("Error Details"):
+                st.code(st.session_state.embedder_error)
+                if "embedder_traceback" in st.session_state and st.session_state.embedder_traceback:
+                    st.text("Traceback:")
+                    st.code(st.session_state.embedder_traceback)
+                st.caption(f"Python {sys.version_info.major}.{sys.version_info.minor}")
+                st.caption(f"Cache: {LocalEmbedder.get_cache_path()}")
+
+    vs = get_vector_store()
+    if vs:
+        st.sidebar.success("Vector Store: Ready")
+    else:
+        st.sidebar.warning("Vector Store: Failed to load")
+        if "vector_store_error" in st.session_state and st.session_state.vector_store_error:
+            with st.sidebar.expander("Vector Store Error"):
+                st.code(st.session_state.vector_store_error)
 
 
 def main() -> None:

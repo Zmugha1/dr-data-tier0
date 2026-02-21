@@ -1,0 +1,6 @@
+client_id,date,notes,contact
+C001,2024-01-15,"Client John Smith called today. SSN is 123-45-6789. He reports feeling anxious about career transition. Email: john.smith@email.com. Phone: 555-123-4567. Diagnosis of generalized anxiety disorder from previous therapist. Medication: Prozac 20mg daily.","john.smith@email.com"
+C002,2024-01-16,"Jane Doe intake session. SSN 987-65-4321. Interested in executive coaching for leadership skills. Email jane.doe@company.com. Phone 555-987-6543. No medical issues reported. Credit card 4532-1234-5678-9012 on file for billing.","jane.doe@company.com"
+C003,2024-01-17,"Bob Johnson follow-up. SSN 456-78-9012. Making progress on work-life balance goals. Email bob.j@yahoo.com. Mentioned stopping Lexapro medication last month without consulting doctor. Discussed stress management techniques.","bob.j@yahoo.com"
+C004,2024-01-18,"Sarah Williams initial consult. No SSN provided yet. Career change from finance to nonprofit. Email sarah.w@outlook.com. Phone 555-456-7890. Previous diagnosis of depression, currently not in treatment.","sarah.w@outlook.com"
+C005,2024-01-19,"Mike Brown session. SSN 111-22-3333. Struggling with imposter syndrome in new management role. Email mbrown@techcorp.com. Credit card ending in 8765 for monthly billing. No medications mentioned.","mbrown@techcorp.com"

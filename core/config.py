@@ -2,7 +2,11 @@
 Configuration constants and patterns for Dr. Data Tier 0.
 """
 
+from pathlib import Path
 from typing import Dict, List
+
+# Project root (core/ -> project root)
+BASE_DIR: Path = Path(__file__).resolve().parent.parent
 
 # PII regex patterns with word boundaries
 PII_PATTERNS: Dict[str, str] = {
@@ -31,5 +35,5 @@ HIPAA_KEYWORDS: List[str] = [
 OLLAMA_HOST: str = "http://localhost:11434"
 MODEL_NAME: str = "phi3:mini"
 
-# ChromaDB persistence path
-CHROMA_PATH: str = "./chroma_db"
+# ChromaDB persistence path - absolute for reliability
+CHROMA_PATH: str = str(BASE_DIR / "chroma_db")

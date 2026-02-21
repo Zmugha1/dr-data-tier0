@@ -20,20 +20,27 @@ class LocalVectorStore:
 
     COLLECTION_NAME: str = "dr_data_docs"
 
-    def __init__(self, persist_path: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        persist_path: Optional[Path] = None,
+        collection_name: Optional[str] = None,
+    ) -> None:
         """
         Initialize ChromaDB persistent client.
 
         Args:
             persist_path: Directory for ChromaDB storage. Defaults to CHROMA_PATH.
+            collection_name: Override collection (e.g. for different embedding dimensions).
         """
         if chromadb is None:
             raise ImportError("chromadb is required. Install with: pip install chromadb")
         path = Path(persist_path) if persist_path else Path(CHROMA_PATH)
+        path.mkdir(parents=True, exist_ok=True)
+        coll_name = collection_name or self.COLLECTION_NAME
         try:
             self._client = chromadb.PersistentClient(path=str(path))
             self._collection = self._client.get_or_create_collection(
-                name=self.COLLECTION_NAME,
+                name=coll_name,
                 metadata={"hnsw:space": "cosine"},
             )
         except Exception as e:
