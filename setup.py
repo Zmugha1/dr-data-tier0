@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Setup script for Dr. Data Tier 0
+Setup script for Dr Data Core Architecture Planning
 Run this first to install all dependencies
 """
 
@@ -23,7 +23,7 @@ def run_command(cmd: str, description: str) -> bool:
 
 def main() -> None:
     """Run full setup: install deps, pre-download model, check Ollama."""
-    print("Dr. Data Tier 0 - Setup")
+    print("Dr Data Core Architecture Planning - Setup")
     print("=" * 50)
 
     import platform

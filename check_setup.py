@@ -8,7 +8,7 @@ import sys
 
 def check() -> int:
     """Run all setup checks and return exit code."""
-    print("Dr. Data Tier 0 - Quick Check\n")
+    print("Dr Data Core Architecture Planning - Quick Check\n")
 
     checks = []
 

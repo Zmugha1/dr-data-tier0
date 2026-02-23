@@ -1,5 +1,5 @@
 """
-Dr. Data Tier 0 - Complete Foundation
+Dr Data Core Architecture Planning
 Zero-Cloud AI for Solo Practitioners
 """
 
@@ -172,7 +172,7 @@ def process_image_file(image_file) -> Optional[str]:
 
 def render_sidebar() -> None:
     """Render sidebar with system status."""
-    st.sidebar.header("Dr. Data Tier 0")
+    st.sidebar.header("Dr Data Core Architecture Planning")
     st.sidebar.caption("Zero-Cloud AI for Decision Intelligence")
     
     st.sidebar.markdown("---")
@@ -214,7 +214,7 @@ def render_sidebar() -> None:
 
 def render_home():
     """Render Home tab with overview."""
-    st.header("🏠 Welcome to Dr. Data Tier 0")
+    st.header("Welcome to Dr Data Core Architecture Planning")
     st.caption("Zero-Cloud AI for Decision Intelligence")
     
     col1, col2, col3 = st.columns(3)
@@ -608,7 +608,7 @@ def render_query_rag():
 
 def main():
     st.set_page_config(
-        page_title="Dr. Data Tier 0",
+        page_title="Dr Data Core Architecture Planning",
         page_icon="📊",
         layout="wide",
     )

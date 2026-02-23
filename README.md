@@ -1,8 +1,8 @@
-# Dr. Data Tier 0 - Edge Micro-Hub
+# Dr Data Core Architecture Planning
 
 **Zero-Cloud AI for Solo Practitioners**
 
-Dr. Data Tier 0 is a local-first, privacy-preserving decision intelligence system designed for individual practitioners who require AI assistance without sending sensitive data to the cloud. All processing runs entirely on your machine using Ollama and local embeddings.
+Dr Data Core Architecture Planning is a local-first, privacy-preserving decision intelligence system designed for individual practitioners who require AI assistance without sending sensitive data to the cloud. All processing runs entirely on your machine using Ollama and local embeddings.
 
 ## Features
 

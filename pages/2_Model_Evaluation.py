@@ -1,6 +1,6 @@
 """
-DR DATA - TIER 0 LLM PRESCRIPTION ENGINE (Model Evaluation Tab)
-================================================================
+DR DATA CORE ARCHITECTURE PLANNING - LLM Prescription Engine (Model Evaluation Tab)
+===================================================================================
 A diagnostic rubric that evaluates business use cases against
 hardware constraints, accuracy requirements, and architectural
 complexity to prescribe the optimal offline LLM stack.
@@ -286,7 +286,7 @@ class LLMPrescriptionRubric:
 # ============================================================================
 
 def render_model_evaluation_tab():
-    st.title("Dr Data: LLM Prescription Engine")
+    st.title("Dr Data Core Architecture Planning: LLM Prescription Engine")
     st.markdown("""
     **Diagnostic Rubric for Offline LLM Selection**
     Answer the questions below to receive a customized model recommendation
