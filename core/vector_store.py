@@ -2,6 +2,7 @@
 ChromaDB wrapper for local vector storage.
 """
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -10,7 +11,28 @@ try:
 except ImportError:
     chromadb = None  # type: ignore
 
+try:
+    import ollama
+except ImportError:
+    ollama = None
+
 from core.config import CHROMA_PATH
+
+
+class OllamaEmbeddingFunction:
+    """ChromaDB embedding function using Ollama nomic-embed-text."""
+
+    def __init__(self, model: str = "nomic-embed-text"):
+        self.model = model
+
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        if ollama is None:
+            raise ImportError("ollama required. Run: pip install ollama")
+        embeddings = []
+        for text in input:
+            result = ollama.embeddings(model=self.model, prompt=text)
+            embeddings.append(result["embedding"])
+        return embeddings
 
 
 class LocalVectorStore:
@@ -132,3 +154,78 @@ class LocalVectorStore:
             }
             for i in range(min(len(ids), n_results))
         ]
+
+
+class VectorStore:
+    """Steps 4-5: Deterministic embedding (Ollama) and ChromaDB storage for RAG pipeline."""
+
+    def __init__(self, collection_name: str = "dr_data_default"):
+        if chromadb is None:
+            raise ImportError("chromadb required. Install with: pip install chromadb")
+        self.persist_dir = Path("data/vector_db")
+        self.persist_dir.mkdir(parents=True, exist_ok=True)
+        self.collection_name = collection_name
+        self.embedding_model = "nomic-embed-text"
+
+        embed_fn = None
+        if ollama:
+            try:
+                embed_fn = OllamaEmbeddingFunction(model=self.embedding_model)
+            except Exception:
+                pass
+
+        self.client = chromadb.PersistentClient(path=str(self.persist_dir))
+        self.collection = self.client.get_or_create_collection(
+            name=collection_name,
+            metadata={"embedding_model": self.embedding_model, "hnsw:space": "cosine"},
+            embedding_function=embed_fn,
+        )
+
+    def add_document(self, doc_data: Dict[str, Any]) -> None:
+        """Step 4: Generate embeddings with idempotency."""
+        chunks = doc_data["chunks"]
+        try:
+            existing_ids = set(self.collection.get()["ids"])
+        except Exception:
+            existing_ids = set()
+
+        new_chunks = [
+            c
+            for c in chunks
+            if c.get("content_hash") and c["content_hash"] not in existing_ids
+        ]
+        if not new_chunks:
+            return
+
+        ids = [c["content_hash"] for c in new_chunks]
+        texts = [c["text"] for c in new_chunks]
+        metadatas = [
+            {
+                "doc_hash": c["doc_hash"],
+                "chunk_index": c["chunk_index"],
+                "source": doc_data["filename"],
+            }
+            for c in new_chunks
+        ]
+        self.collection.add(ids=ids, documents=texts, metadatas=metadatas)
+
+    def query(self, query_text: str, n_results: int = 5) -> Dict[str, Any]:
+        """Retrieve context for RAG."""
+        return self.collection.query(
+            query_texts=[query_text],
+            n_results=n_results,
+            include=["documents", "metadatas", "distances"],
+        )
+
+    def persist(self) -> Dict[str, Any]:
+        """Step 5: Validation and manifest export."""
+        count = self.collection.count()
+        manifest = {
+            "collection": self.collection_name,
+            "embedding_model": self.embedding_model,
+            "chunks_indexed": count,
+            "storage_path": str(self.persist_dir),
+        }
+        with open(self.persist_dir / "vector_manifest.json", "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+        return manifest
