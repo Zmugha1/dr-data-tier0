@@ -351,9 +351,14 @@ class LLMPrescriptionRubric:
 def render_model_evaluation_tab():
     st.title("🧠 Dr Data: LLM Prescription Engine")
     st.markdown("""
-    **Diagnostic Rubric for Offline LLM Selection**  
-    Select your business requirements to receive a customized model recommendation 
-    based on hardware constraints, accuracy requirements, and architectural complexity.
+    **What this page does**: Get a tailored recommendation for which local LLM to use based on your use case, hardware, and quality needs.  
+    No models are run here—this is a diagnostic tool that maps your requirements to the best offline stack (Phi-4, Llama, Qwen, etc.).
+
+    **How to use**:  
+    1. **Explore** — Open the expanders above to read about Tier 0 value, cloud-to-local mappings, and RAG vs GraphRAG.  
+    2. **Configure** — Fill in the form below: task type, document volume, reasoning depth, latency, accuracy, and VRAM.  
+    3. **Prescribe** — Click **Generate Prescription** to receive a model recommendation with justification and implementation commands.  
+    4. **Export** — Download the prescription as JSON for deployment planning.
     """)
 
     # DROPDOWN 1: Why Tier 0?
@@ -508,6 +513,7 @@ def render_model_evaluation_tab():
     # MAIN PRESCRIPTION INTERFACE
     st.divider()
     st.header("📋 Prescription Configuration")
+    st.caption("Answer the questions below, then click **Generate Prescription** to get your recommendation.")
 
     col1, col2 = st.columns(2)
 
@@ -573,6 +579,7 @@ def render_model_evaluation_tab():
         )
 
     st.divider()
+    st.caption("Click the button below after selecting your options above.")
     if st.button("🔍 Generate Prescription", type="primary", use_container_width=True):
         profile = UseCaseProfile(
             task_type=task_type,

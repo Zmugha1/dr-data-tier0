@@ -11,10 +11,16 @@ from core.vector_store import VectorStore
 
 st.set_page_config(page_title="RAG Chat - Traditional", layout="wide")
 
-st.title("Traditional RAG Chat")
+st.title("💬 Traditional RAG Chat")
 st.markdown("""
-**Architecture**: Document -> Vector DB (Similarity Search) -> LLM
-**Use case**: Single-document Q&A, semantic search, summarization
+**What this page does**: Ask questions about your documents using semantic search.  
+Your query is matched to the most relevant text chunks in the Vector DB, then an LLM generates an answer based on that context.  
+**Best for**: "What does this document say about X?", summarization, single-document Q&A.
+
+**How to use**:  
+1. **Prerequisite** — Upload and process documents on the main page first.  
+2. **Configure** — In the sidebar, choose the LLM model and how many chunks to retrieve (top_k).  
+3. **Ask** — Type your question in the chat box below and press Enter.
 """)
 
 with st.expander("View Architecture"):
@@ -40,9 +46,10 @@ if "rag_messages" not in st.session_state:
 
 with st.sidebar:
     st.header("RAG Configuration")
+    st.caption("Choose the Ollama model for generation. Ensure it's pulled: ollama pull <model>")
     model = st.selectbox("Model", ["llama3.1:8b", "phi4:latest", "qwen2.5:14b"])
-    top_k = st.slider("Retrieval chunks (k)", 1, 10, 5)
-    show_context = st.checkbox("Show retrieved context", value=True)
+    top_k = st.slider("Retrieval chunks (k)", 1, 10, 5, help="More chunks = broader context but slower.")
+    show_context = st.checkbox("Show retrieved context", value=True, help="Expand each reply to see which document chunks were used.")
 
 for msg in st.session_state.rag_messages:
     with st.chat_message(msg["role"]):
@@ -53,6 +60,8 @@ for msg in st.session_state.rag_messages:
                     dist = src.get("distance", 0)
                     st.caption(f"From: {src['source']} (Score: {dist:.3f})")
 
+st.markdown("---")
+st.caption("Type a question below and press Enter. Examples: *What is the main topic?*, *Summarize the key points*, *Find information about [topic]*")
 query = st.chat_input("Ask about your documents...")
 
 if query:

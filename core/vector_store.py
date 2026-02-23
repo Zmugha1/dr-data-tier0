@@ -8,31 +8,14 @@ from typing import Any, Dict, List, Optional
 
 try:
     import chromadb
+    from chromadb.config import Settings
+    from chromadb.utils import embedding_functions
 except ImportError:
     chromadb = None  # type: ignore
-
-try:
-    import ollama
-except ImportError:
-    ollama = None
+    Settings = None  # type: ignore
+    embedding_functions = None  # type: ignore
 
 from core.config import CHROMA_PATH
-
-
-class OllamaEmbeddingFunction:
-    """ChromaDB embedding function using Ollama nomic-embed-text."""
-
-    def __init__(self, model: str = "nomic-embed-text"):
-        self.model = model
-
-    def __call__(self, input: List[str]) -> List[List[float]]:
-        if ollama is None:
-            raise ImportError("ollama required. Run: pip install ollama")
-        embeddings = []
-        for text in input:
-            result = ollama.embeddings(model=self.model, prompt=text)
-            embeddings.append(result["embedding"])
-        return embeddings
 
 
 class LocalVectorStore:
@@ -157,37 +140,48 @@ class LocalVectorStore:
 
 
 class VectorStore:
-    """Steps 4-5: Deterministic embedding (Ollama) and ChromaDB storage for RAG pipeline."""
+    """Steps 4-5: Deterministic embedding and ChromaDB storage for RAG pipeline."""
 
     def __init__(self, collection_name: str = "dr_data_default"):
-        if chromadb is None:
-            raise ImportError("chromadb required. Install with: pip install chromadb")
+        if chromadb is None or embedding_functions is None:
+            raise ImportError("chromadb required. Install with: pip install chromadb sentence-transformers")
         self.persist_dir = Path("data/vector_db")
         self.persist_dir.mkdir(parents=True, exist_ok=True)
         self.collection_name = collection_name
-        self.embedding_model = "nomic-embed-text"
+        self.embedding_model = "all-MiniLM-L6-v2"
 
-        embed_fn = None
-        if ollama:
-            try:
-                embed_fn = OllamaEmbeddingFunction(model=self.embedding_model)
-            except Exception:
-                pass
+        # Option A: Sentence-transformers (local, offline, ~22MB download once)
+        self.embedding_func = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2",
+            device="cpu",
+        )
+        # Option B: Ollama embeddings (uncomment if preferred)
+        # self.embedding_func = embedding_functions.OllamaEmbeddingFunction(
+        #     url="http://localhost:11434",
+        #     model_name="nomic-embed-text:latest",
+        # )
 
-        self.client = chromadb.PersistentClient(path=str(self.persist_dir))
+        self.client = chromadb.PersistentClient(
+            path=str(self.persist_dir),
+            settings=Settings(anonymized_telemetry=False) if Settings else None,
+        )
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
-            metadata={"embedding_model": self.embedding_model, "hnsw:space": "cosine"},
-            embedding_function=embed_fn,
+            embedding_function=self.embedding_func,
+            metadata={"hnsw:space": "cosine"},
         )
 
     def add_document(self, doc_data: Dict[str, Any]) -> None:
         """Step 4: Generate embeddings with idempotency."""
         chunks = doc_data["chunks"]
+
+        existing_ids: set = set()
         try:
-            existing_ids = set(self.collection.get()["ids"])
+            existing = self.collection.get()
+            if existing and "ids" in existing:
+                existing_ids = set(existing["ids"])
         except Exception:
-            existing_ids = set()
+            pass
 
         new_chunks = [
             c
@@ -204,9 +198,12 @@ class VectorStore:
                 "doc_hash": c["doc_hash"],
                 "chunk_index": c["chunk_index"],
                 "source": doc_data["filename"],
+                "char_start": c.get("char_start", 0),
+                "char_end": c.get("char_end", 0),
             }
             for c in new_chunks
         ]
+
         self.collection.add(ids=ids, documents=texts, metadatas=metadatas)
 
     def query(self, query_text: str, n_results: int = 5) -> Dict[str, Any]:

@@ -19,8 +19,15 @@ st.set_page_config(page_title="GraphRAG Chat", layout="wide")
 
 st.title("🕸️ GraphRAG Chat")
 st.markdown("""
-**Architecture**: Document → Knowledge Graph (Entities/Relations) + Vector DB → LLM  
-**Use case**: Multi-hop reasoning, relationship analysis, "Why" questions, entity-centric queries
+**What this page does**: Answer questions that require connecting entities across documents.  
+GraphRAG combines **vector search** (semantic similarity) with **graph traversal** (entity relationships) to find multi-hop answers.  
+**Best for**: "Which vendors are connected to high expenses?", "Why did costs spike?", relationship and cause-effect questions.
+
+**How to use**:  
+1. **Prerequisite** — Upload and process documents on the main page first.  
+2. **Configure** — In the sidebar, pick the reasoning model, graph traversal depth, and whether to show entity subgraph.  
+3. **Explore** — Use *Inspect entity* to view entities and their connections.  
+4. **Ask** — Type your question in the chat box (include entity names for better graph matching).
 """)
 
 with st.expander("🏗️ View Architecture"):
@@ -60,9 +67,10 @@ except Exception:
 
 with st.sidebar:
     st.header("GraphRAG Configuration")
+    st.caption("GraphRAG benefits from larger models (Qwen, Llama) for reasoning.")
     model = st.selectbox("Reasoning Model", ["qwen2.5:14b", "llama3.1:8b", "phi4:latest"])
-    traversal_depth = st.slider("Graph traversal depth", 1, 3, 2)
-    show_graph = st.checkbox("Visualize subgraph", value=True)
+    traversal_depth = st.slider("Graph traversal depth", 1, 3, 2, help="How many hops to traverse from matched entities. Deeper = more context, slower.")
+    show_graph = st.checkbox("Visualize subgraph", value=True, help="Show a simplified view of entities involved in the answer.")
 
 st.sidebar.subheader("Entity Explorer")
 if kg and kg.G.number_of_nodes() > 0:
@@ -75,12 +83,15 @@ if kg and kg.G.number_of_nodes() > 0:
     selected_entity = st.sidebar.selectbox("Inspect entity", options)
 else:
     selected_entity = None
-    st.sidebar.info("Upload documents to see entities")
+    st.sidebar.info("Upload documents on the main page to see extracted entities here.")
 
 if selected_entity and selected_entity != "-- Select --" and kg:
+    st.sidebar.caption("Subgraph for selected entity:")
     subgraph = kg.query_graph(selected_entity, depth=traversal_depth)
     st.sidebar.json(subgraph.get("nodes", [])[:3], expanded=False)
 
+st.markdown("---")
+st.caption("Type a question about relationships or entities. Include names (e.g., vendor names, products) to improve graph matching.")
 for msg in st.session_state.graph_messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])

@@ -20,13 +20,15 @@ st.set_page_config(
 
 st.title("🏥 Dr Data - Zero-Cloud AI Architecture Lab")
 st.markdown("""
-**Deterministic, Idempotent Document Processing Pipeline**  
-Upload documents to build Vector DB (Semantic) + Knowledge Graph (Relational) simultaneously.
+**What this page does**: This is the main hub for ingesting documents into your RAG/GraphRAG pipeline.  
+Upload PDFs, CSVs, TXT, or Excel files to build both a **Vector DB** (semantic search) and **Knowledge Graph** (entity relationships) at once.  
+All processing is deterministic and idempotent—duplicate files are automatically skipped.
 """)
 
 # Sidebar Status
 with st.sidebar:
     st.header("System Status")
+    st.caption("Shows readiness of Ollama, Vector DB, and Knowledge Graph. Process documents to populate.")
 
     try:
         import requests
@@ -62,6 +64,14 @@ tab1, tab2, tab3 = st.tabs(["📤 Upload & Process", "📊 Pipeline Status", "�
 with tab1:
     st.header("Phase 1: Document Ingestion & Canonicalization")
 
+    st.info("""
+    **How to use this tab**:  
+    1. **Upload** — Click *Browse files* or drag-and-drop documents (PDF, CSV, TXT, XLSX).  
+    2. **Optional** — Adjust chunk size/overlap in the expander below if needed.  
+    3. **Process** — Click **Process Documents** to run the pipeline. First run may take a minute (embedding model loads).  
+    4. **Result** — A table shows each file's status (Processed or Skipped if duplicate).  
+    """)
+
     col1, col2 = st.columns([2, 1])
 
     with col1:
@@ -74,6 +84,7 @@ with tab1:
 
         processing_options = st.expander("⚙️ Deterministic Processing Options")
         with processing_options:
+            st.caption("Adjust these only if you need different chunk sizes. Defaults work for most documents.")
             chunk_size = st.slider("Chunk Size (tokens)", 256, 1024, 512, 64)
             chunk_overlap = st.slider("Chunk Overlap", 0, 100, 50, 10)
             ocr_enabled = st.checkbox("Enable OCR for scanned PDFs", value=True)
@@ -87,7 +98,7 @@ with tab1:
         - Version-pinned embeddings
         - Audit trail logging
         """)
-
+        st.caption("Click the button below after selecting files.")
         if st.button("🚀 Process Documents", type="primary", use_container_width=True):
             if not uploaded_files:
                 st.warning("Upload files first")
@@ -158,6 +169,7 @@ with tab1:
 
 with tab2:
     st.header("Pipeline Execution Status")
+    st.caption("View metrics and workflow status after processing documents. No action required—data updates automatically.")
 
     if Path("data/audit_logs/latest_manifest.json").exists():
         with open("data/audit_logs/latest_manifest.json", encoding="utf-8") as f:
@@ -187,6 +199,7 @@ with tab2:
 
 with tab3:
     st.header("Data Structure Explorer")
+    st.caption("Inspect the knowledge graph built from your documents. Shows node counts, sample entities, and graph density. No interaction needed—just browse the stats.")
 
     if Path("data/graph_store/knowledge_graph.pkl").exists():
         import pickle

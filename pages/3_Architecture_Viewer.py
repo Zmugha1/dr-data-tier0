@@ -9,6 +9,10 @@ import streamlit as st
 st.set_page_config(page_title="Architecture Viewer", layout="wide")
 
 st.title("🏗️ Dr Data Architecture Visualizer")
+st.markdown("""
+**What this page does**: Inspect the 19-step deterministic pipeline, data schemas, audit hash chain, and RAG vs GraphRAG comparison.  
+**Read-only** — no uploads or actions. Use the tabs below to explore different aspects of the architecture.
+""")
 
 tab1, tab2, tab3, tab4 = st.tabs(
     ["Pipeline Flow", "Data Structures", "Determinism Proof", "Comparison"]
@@ -16,6 +20,7 @@ tab1, tab2, tab3, tab4 = st.tabs(
 
 with tab1:
     st.header("19-Step Deterministic Workflow")
+    st.caption("Each step is executed in order during document processing. Green checkmarks indicate completed phases.")
 
     steps = [
         ("1. Hash (SHA-256)", "Content-addressable storage", "🔐"),
@@ -57,6 +62,7 @@ with tab1:
 
 with tab2:
     st.header("Data Structure Inspector")
+    st.caption("View the schema and current state of your Vector DB and Knowledge Graph (after processing documents).")
 
     col1, col2 = st.columns(2)
 
@@ -114,6 +120,7 @@ Backup: GEXF (Cytoscape compatible)
 
 with tab3:
     st.header("Determinism & Idempotency Proof")
+    st.caption("Audit chain proving that reprocessing the same file produces no duplicates and preserves traceability.")
 
     st.markdown("""
     ### Idempotency Check
@@ -145,6 +152,7 @@ with tab3:
 
 with tab4:
     st.header("RAG vs GraphRAG Decision Matrix")
+    st.caption("Use this table to decide which chat interface (RAG vs GraphRAG) fits your question type.")
 
     comparison_data = {
         "Dimension": [
