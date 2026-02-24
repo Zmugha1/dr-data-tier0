@@ -13,7 +13,7 @@ except ImportError:
     go = None
 
 from core.knowledge_graph import KnowledgeGraphBuilder
-from core.vector_store import VectorStore
+from core.vector_store import get_vector_store
 
 st.set_page_config(page_title="GraphRAG Chat", layout="wide")
 
@@ -110,7 +110,14 @@ if query:
     with st.chat_message("assistant"):
         try:
             with st.spinner("Traversing knowledge graph..."):
-                vector_store = VectorStore()
+                try:
+                    vector_store = get_vector_store()
+                except Exception as e:
+                    if "different settings" in str(e).lower() or "conflict" in str(e).lower():
+                        st.error("Vector DB settings conflict. Go to the main page and click **Reset Vector DB**.")
+                    else:
+                        st.error(f"Vector store error: {e}")
+                    st.stop()
                 vec_results = vector_store.query(query, n_results=3)
 
                 query_entities = []

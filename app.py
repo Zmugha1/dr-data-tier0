@@ -4,19 +4,93 @@ Deterministic, Idempotent Document Processing Pipeline
 """
 
 import json
+import shutil
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-for dir_path in ["data/raw", "data/vector_db", "data/graph_store", "data/audit_logs"]:
-    Path(dir_path).mkdir(parents=True, exist_ok=True)
+from core.vector_store import VectorStore, get_vector_store
 
 st.set_page_config(
     page_title="Dr Data - Tier 0 RAG/GraphRAG Lab",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+for dir_path in ["data/raw", "data/vector_db", "data/graph_store", "data/audit_logs"]:
+    Path(dir_path).mkdir(parents=True, exist_ok=True)
+
+
+def reset_vector_db():
+    """Reset the vector database."""
+    try:
+        vs = VectorStore()
+        vs.reset_database()
+        st.cache_resource.clear()
+        return True
+    except Exception as e:
+        st.error(f"Reset failed: {e}")
+        return False
+
+
+def reset_all_data():
+    """Reset all data stores (vector DB + knowledge graph)."""
+    try:
+        vs = VectorStore()
+        vs.reset_database()
+        kg_path = Path("data/graph_store")
+        if kg_path.exists():
+            shutil.rmtree(kg_path)
+            kg_path.mkdir(parents=True, exist_ok=True)
+        st.cache_resource.clear()
+        return True
+    except Exception as e:
+        st.error(f"Full reset failed: {e}")
+        return False
+
+
+# Initialize vector store; handle conflicts
+vector_store = None
+init_error = None
+try:
+    vector_store = get_vector_store()
+except Exception as e:
+    err_str = str(e).lower()
+    if "different settings" in err_str or "already exists" in err_str or "conflict" in err_str:
+        init_error = "settings_conflict"
+    else:
+        init_error = "other"
+        st.error(f"Vector DB Error: {e}")
+
+if init_error == "settings_conflict":
+    st.error("⚠️ Vector DB Settings Conflict Detected")
+    st.warning("""
+    The Vector DB was created with different settings (likely from a previous version).
+    You need to reset it to use the current configuration.
+
+    **What will be lost:** Previously indexed embeddings (documents in /data/raw/ are preserved)
+    **What will be kept:** Original uploaded documents, Knowledge Graph (unless Full Reset)
+    """)
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🗑️ Reset Vector DB Only", type="primary", use_container_width=True):
+            with st.spinner("Resetting..."):
+                if reset_vector_db():
+                    st.success("✅ Vector DB reset!")
+                    st.rerun()
+    with col2:
+        if st.button("☢️ Full System Reset", use_container_width=True):
+            with st.spinner("Resetting all..."):
+                if reset_all_data():
+                    st.success("✅ Full reset complete!")
+                    st.rerun()
+    st.stop()
+elif vector_store is None and init_error == "other":
+    st.error("Failed to initialize Vector Store. Check logs.")
+    if st.button("Retry"):
+        st.rerun()
+    st.stop()
 
 st.title("🏥 Dr Data - Zero-Cloud AI Architecture Lab")
 st.markdown("""
@@ -29,6 +103,12 @@ All processing is deterministic and idempotent—duplicate files are automatical
 with st.sidebar:
     st.header("System Status")
     st.caption("Shows readiness of Ollama, Vector DB, and Knowledge Graph. Process documents to populate.")
+
+    vec_stats = vector_store.get_stats() if vector_store else {}
+    if vec_stats.get("status") == "Active":
+        st.success(f"🟢 Vector DB: {vec_stats.get('chunks', 0)} chunks")
+    else:
+        st.warning("🟡 Vector DB Empty")
 
     try:
         import requests
@@ -44,19 +124,21 @@ with st.sidebar:
     raw_count = len(list(Path("data/raw").glob("**/*.*")))
     st.info(f"📁 Documents Stored: {raw_count}")
 
-    vec_ready = (
-        Path("data/vector_db/chroma.sqlite3").exists()
-        or Path("data/vector_db/vector_manifest.json").exists()
-    )
-    if vec_ready:
-        st.success("🟢 Vector DB Ready")
-    else:
-        st.warning("🟡 Vector DB Empty")
-
     if Path("data/graph_store/knowledge_graph.pkl").exists():
         st.success("🟢 Knowledge Graph Ready")
     else:
         st.warning("🟡 Knowledge Graph Empty")
+
+    st.divider()
+    st.caption("Maintenance")
+    if st.button("🔄 Reset Vector DB", help="Clear all embeddings (keeps documents)"):
+        if reset_vector_db():
+            st.success("Vector DB cleared!")
+            st.rerun()
+    if st.button("☢️ Factory Reset", help="Clear vector DB + knowledge graph"):
+        if reset_all_data():
+            st.success("System reset!")
+            st.rerun()
 
 # Main Tabs
 tab1, tab2, tab3 = st.tabs(["📤 Upload & Process", "📊 Pipeline Status", "🔍 Data Explorer"])
@@ -102,6 +184,9 @@ with tab1:
         if st.button("🚀 Process Documents", type="primary", use_container_width=True):
             if not uploaded_files:
                 st.warning("Upload files first")
+            elif vector_store is None:
+                st.error("Vector Store not available. Reset the database using the button in the sidebar.")
+                st.stop()
             else:
                 with st.spinner("Running 19-step deterministic pipeline..."):
                     progress_bar = st.progress(0)
@@ -110,13 +195,11 @@ with tab1:
                     from core.audit_logger import AuditLogger
                     from core.document_processor import DocumentProcessor
                     from core.knowledge_graph import KnowledgeGraphBuilder
-                    from core.vector_store import VectorStore
 
                     logger = AuditLogger()
                     processor = DocumentProcessor(
                         chunk_size=chunk_size, chunk_overlap=chunk_overlap
                     )
-                    vector_store = VectorStore()
                     kg_builder = KnowledgeGraphBuilder()
 
                     results = []
