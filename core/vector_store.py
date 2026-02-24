@@ -3,6 +3,7 @@ ChromaDB wrapper for local vector storage.
 """
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -142,7 +143,7 @@ class LocalVectorStore:
 class VectorStore:
     """Steps 4-5: Deterministic embedding and ChromaDB storage for RAG pipeline."""
 
-    def __init__(self, collection_name: str = "dr_data_default"):
+    def __init__(self, collection_name: str = "dr_data_default", reset_if_conflict: bool = False):
         if chromadb is None or embedding_functions is None:
             raise ImportError("chromadb required. Install with: pip install chromadb sentence-transformers")
         self.persist_dir = Path("data/vector_db")
@@ -150,26 +151,49 @@ class VectorStore:
         self.collection_name = collection_name
         self.embedding_model = "all-MiniLM-L6-v2"
 
-        # Option A: Sentence-transformers (local, offline, ~22MB download once)
         self.embedding_func = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2",
             device="cpu",
         )
-        # Option B: Ollama embeddings (uncomment if preferred)
-        # self.embedding_func = embedding_functions.OllamaEmbeddingFunction(
-        #     url="http://localhost:11434",
-        #     model_name="nomic-embed-text:latest",
-        # )
 
-        self.client = chromadb.PersistentClient(
-            path=str(self.persist_dir),
-            settings=Settings(anonymized_telemetry=False) if Settings else None,
-        )
-        self.collection = self.client.get_or_create_collection(
-            name=collection_name,
-            embedding_function=self.embedding_func,
-            metadata={"hnsw:space": "cosine"},
-        )
+        try:
+            self.client = chromadb.PersistentClient(
+                path=str(self.persist_dir),
+                settings=Settings(anonymized_telemetry=False) if Settings else None,
+            )
+            try:
+                self.collection = self.client.get_collection(
+                    name=collection_name,
+                    embedding_function=self.embedding_func,
+                )
+            except Exception:
+                self.collection = self.client.create_collection(
+                    name=collection_name,
+                    embedding_function=self.embedding_func,
+                    metadata={"hnsw:space": "cosine"},
+                )
+        except Exception as e:
+            err_lower = str(e).lower()
+            if "different settings" in err_lower or "already exists" in err_lower or "conflict" in err_lower:
+                if reset_if_conflict:
+                    shutil.rmtree(self.persist_dir, ignore_errors=True)
+                    self.persist_dir.mkdir(parents=True, exist_ok=True)
+                    self.client = chromadb.PersistentClient(
+                        path=str(self.persist_dir),
+                        settings=Settings(anonymized_telemetry=False) if Settings else None,
+                    )
+                    self.collection = self.client.create_collection(
+                        name=collection_name,
+                        embedding_function=self.embedding_func,
+                        metadata={"hnsw:space": "cosine"},
+                    )
+                else:
+                    raise RuntimeError(
+                        f"Vector DB settings conflict. Delete '{self.persist_dir}' manually, "
+                        f"or use VectorStore(reset_if_conflict=True). Original: {e}"
+                    ) from e
+            else:
+                raise
 
     def add_document(self, doc_data: Dict[str, Any]) -> None:
         """Step 4: Generate embeddings with idempotency."""
