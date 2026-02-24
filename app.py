@@ -11,7 +11,12 @@ import pandas as pd
 import streamlit as st
 
 from core.knowledge_graph import KnowledgeGraphBuilder
-from core.vector_store import safe_vector_store_init
+
+try:
+    from core.vector_store import safe_vector_store_init
+except ImportError:
+    from core.vector_store import VectorStore
+    safe_vector_store_init = lambda: VectorStore()
 
 st.set_page_config(
     page_title="Dr Data - Tier 0 RAG/GraphRAG Lab",
