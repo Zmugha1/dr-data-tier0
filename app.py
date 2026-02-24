@@ -24,29 +24,54 @@ for dir_path in ["data/raw", "data/vector_db", "data/graph_store", "data/audit_l
 # Session state for reset confirmations
 if "show_reset_confirm" not in st.session_state:
     st.session_state.show_reset_confirm = False
+if "show_full_reset" not in st.session_state:
+    st.session_state.show_full_reset = False
 if "sidebar_reset_confirm" not in st.session_state:
     st.session_state.sidebar_reset_confirm = False
+def reset_vector_db_raw():
+    """Reset vector DB by directly deleting folder (no VectorStore instantiation)."""
+    import gc
+    import time
 
-
-def reset_vector_db():
-    """Reset the vector database safely."""
+    db_path = Path("data/vector_db")
+    if db_path.exists():
+        gc.collect()
+        max_retries = 3
+        for i in range(max_retries):
+            try:
+                shutil.rmtree(db_path, ignore_errors=False)
+                break
+            except (PermissionError, OSError):
+                if i < max_retries - 1:
+                    time.sleep(0.5)
+                    gc.collect()
+                else:
+                    shutil.rmtree(db_path, ignore_errors=True)
+    db_path.mkdir(parents=True, exist_ok=True)
     try:
         vs = VectorStore()
-        vs.reset_database()
+        vs.initialize(reset=False)
         return True, None
     except Exception as e:
         return False, str(e)
 
 
-def reset_all_data():
-    """Reset all data stores including knowledge graph."""
+def reset_all_data_raw():
+    """Reset all data without instantiating existing corrupted stores."""
+    import gc
+
+    db_path = Path("data/vector_db")
+    if db_path.exists():
+        gc.collect()
+        shutil.rmtree(db_path, ignore_errors=True)
+        db_path.mkdir(parents=True, exist_ok=True)
+    kg_path = Path("data/graph_store")
+    if kg_path.exists():
+        shutil.rmtree(kg_path, ignore_errors=True)
+        kg_path.mkdir(parents=True, exist_ok=True)
     try:
         vs = VectorStore()
-        vs.reset_database()
-        kg_path = Path("data/graph_store")
-        if kg_path.exists():
-            shutil.rmtree(kg_path)
-            kg_path.mkdir(parents=True, exist_ok=True)
+        vs.initialize(reset=False)
         return True, None
     except Exception as e:
         return False, str(e)
@@ -71,37 +96,41 @@ if init_error == "settings_conflict":
     st.error("⚠️ Vector DB Settings Conflict Detected")
     st.warning("""
     **What happened?**  
-    The Vector DB was created with different settings (likely from a previous version or different embedding model).
+    The Vector DB was created with different settings (embedding model mismatch).
 
-    **What will be lost:** Previously indexed embeddings (vector search index)
-
-    **What will be kept:** Original uploaded documents (in `/data/raw/`), Knowledge Graph (unless Full Reset)
+    **Click the button below to fix this.**
     """)
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🗑️ Reset Vector DB Only", type="primary", use_container_width=True):
-            with st.spinner("Resetting Vector DB..."):
-                success, err = reset_vector_db()
+            with st.spinner("Force deleting corrupted database..."):
+                success, err = reset_vector_db_raw()
                 if success:
-                    st.success("✅ Vector DB reset successfully!")
+                    st.success("✅ Reset complete! Reloading...")
                     st.rerun()
                 else:
                     st.error(f"Reset failed: {err}")
+                    st.info("Try closing the app and manually deleting the 'data/vector_db' folder")
     with col2:
         if st.button("☢️ Full System Reset", use_container_width=True):
-            st.session_state.show_reset_confirm = True
+            st.session_state.show_full_reset = True
 
-    if st.session_state.show_reset_confirm:
+    if st.session_state.show_full_reset:
         st.warning("⚠️ This will delete ALL processed data including Knowledge Graph!")
         confirm = st.checkbox("I understand this deletes all embeddings and graph data")
         if confirm and st.button("Confirm Full Reset", type="primary"):
-            with st.spinner("Performing full reset..."):
-                success, err = reset_all_data()
+            with st.spinner("Resetting everything..."):
+                success, err = reset_all_data_raw()
                 if success:
-                    st.success("✅ Full reset complete!")
+                    st.success("✅ Full reset complete! Reloading...")
                     st.rerun()
                 else:
-                    st.error(f"Reset failed: {err}")
+                    st.error(f"Failed: {err}")
+
+    st.divider()
+    st.subheader("Emergency Manual Reset")
+    st.code("rd /s /q data\\vector_db\nmkdir data\\vector_db\nstreamlit run app.py", language="batch")
+    st.caption("Close Streamlit (Ctrl+C), then run in terminal if button fails.")
     st.stop()
 elif init_error == "other":
     st.error("Failed to initialize Vector Store. Check the error message above.")
@@ -152,7 +181,7 @@ with st.sidebar:
     st.divider()
     st.caption("🛠️ Maintenance")
     if st.button("🔄 Reset Vector DB", help="Clear embeddings (keeps documents)"):
-        success, err = reset_vector_db()
+        success, err = reset_vector_db_raw()
         if success:
             st.success("Vector DB cleared!")
             st.rerun()
@@ -164,7 +193,7 @@ with st.sidebar:
         if st.session_state.sidebar_reset_confirm:
             if st.checkbox("Confirm delete all data", key="confirm_factory"):
                 if st.button("Execute Factory Reset"):
-                    success, err = reset_all_data()
+                    success, err = reset_all_data_raw()
                     if success:
                         st.success("Factory reset complete!")
                         st.rerun()
