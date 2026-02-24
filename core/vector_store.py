@@ -1,204 +1,85 @@
 """
 ChromaDB wrapper for local vector storage.
+Simple VectorStore with explicit embedding function.
 """
 
+import gc
 import json
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
-try:
-    import chromadb
-    from chromadb.config import Settings
-    from chromadb.utils import embedding_functions
-except ImportError:
-    chromadb = None  # type: ignore
-    Settings = None  # type: ignore
-    embedding_functions = None  # type: ignore
-
-from core.config import CHROMA_PATH
+import chromadb
+from chromadb.config import Settings
+from chromadb.utils import embedding_functions
 
 
-class LocalVectorStore:
+def safe_vector_store_init(collection_name: str = "dr_data_default") -> "VectorStore":
     """
-    Persistent ChromaDB vector store for document retrieval.
+    Check for corruption BEFORE instantiating client, delete if needed, then create fresh.
     """
+    db_path = Path("data/vector_db")
+    db_path.mkdir(parents=True, exist_ok=True)
 
-    COLLECTION_NAME: str = "dr_data_docs"
-
-    def __init__(
-        self,
-        persist_path: Optional[Path] = None,
-        collection_name: Optional[str] = None,
-    ) -> None:
-        """
-        Initialize ChromaDB persistent client.
-
-        Args:
-            persist_path: Directory for ChromaDB storage. Defaults to CHROMA_PATH.
-            collection_name: Override collection (e.g. for different embedding dimensions).
-        """
-        if chromadb is None:
-            raise ImportError("chromadb is required. Install with: pip install chromadb")
-        path = Path(persist_path) if persist_path else Path(CHROMA_PATH)
-        path.mkdir(parents=True, exist_ok=True)
-        coll_name = collection_name or self.COLLECTION_NAME
+    if (db_path / "chroma.sqlite3").exists():
         try:
-            self._client = chromadb.PersistentClient(path=str(path))
-            self._collection = self._client.get_or_create_collection(
-                name=coll_name,
-                metadata={"hnsw:space": "cosine"},
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to initialize ChromaDB: {e}") from e
+            test_client = chromadb.PersistentClient(path=str(db_path))
+            test_client.list_collections()
+            del test_client
+        except Exception:
+            shutil.rmtree(db_path, ignore_errors=True)
+            gc.collect()
+            db_path.mkdir(parents=True, exist_ok=True)
 
-    def add_document(
-        self,
-        doc_id: str,
-        text: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        embedding: Optional[List[float]] = None,
-    ) -> None:
-        """
-        Add a document to the vector store.
-
-        Args:
-            doc_id: Unique identifier for the document.
-            text: Document content (stored in metadata for retrieval).
-            metadata: Optional metadata dict. 'text' will be set from text.
-            embedding: Optional precomputed embedding. If None, caller must provide.
-        """
-        meta = dict(metadata or {})
-        meta["text"] = text
-
-        try:
-            if embedding is not None:
-                self._collection.upsert(
-                    ids=[doc_id],
-                    embeddings=[embedding],
-                    metadatas=[meta],
-                )
-            else:
-                self._collection.upsert(
-                    ids=[doc_id],
-                    documents=[text],
-                    metadatas=[meta],
-                )
-        except Exception as e:
-            raise RuntimeError(f"Failed to add document {doc_id}: {e}") from e
-
-    def query(
-        self,
-        query_embedding: Optional[List[float]] = None,
-        query_text: Optional[str] = None,
-        n_results: int = 3,
-    ) -> List[Dict[str, Any]]:
-        """
-        Query the vector store for similar documents.
-
-        Args:
-            query_embedding: Precomputed query vector.
-            query_text: Query text (requires collection to support document query).
-            n_results: Number of results to return.
-
-        Returns:
-            List of dicts with 'id', 'metadata', 'distance'.
-        """
-        try:
-            if query_embedding is not None:
-                results = self._collection.query(
-                    query_embeddings=[query_embedding],
-                    n_results=n_results,
-                    include=["metadatas", "documents", "distances"],
-                )
-            elif query_text is not None:
-                results = self._collection.query(
-                    query_texts=[query_text],
-                    n_results=n_results,
-                    include=["metadatas", "documents", "distances"],
-                )
-            else:
-                raise ValueError("Either query_embedding or query_text must be provided")
-        except Exception as e:
-            raise RuntimeError(f"Query failed: {e}") from e
-
-        ids = results["ids"][0] if results["ids"] else []
-        metadatas = results["metadatas"][0] if results["metadatas"] else []
-        documents = results.get("documents", [[]])
-        docs_list = documents[0] if documents else []
-        distances = results.get("distances", [[]])
-        dist_list = distances[0] if distances else []
-
-        return [
-            {
-                "id": ids[i] if i < len(ids) else "",
-                "metadata": metadatas[i] if i < len(metadatas) else {},
-                "document": docs_list[i] if i < len(docs_list) else "",
-                "distance": dist_list[i] if i < len(dist_list) else None,
-            }
-            for i in range(min(len(ids), n_results))
-        ]
+    return VectorStore(collection_name=collection_name)
 
 
 class VectorStore:
-    """Steps 4-5: Deterministic embedding and ChromaDB storage for RAG pipeline."""
+    """Simple VectorStore with explicit embedding function."""
 
     def __init__(self, collection_name: str = "dr_data_default"):
-        if chromadb is None or embedding_functions is None:
-            raise ImportError("chromadb required. Install with: pip install chromadb sentence-transformers")
         self.persist_dir = Path("data/vector_db")
+        self.persist_dir.mkdir(parents=True, exist_ok=True)
         self.collection_name = collection_name
-        self.embedding_model = "all-MiniLM-L6-v2"
+
+        # Explicit embedding function
         self.embedding_func = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2",
             device="cpu",
         )
-        self.client = None
-        self.collection = None
 
-    def initialize(self, reset: bool = False) -> None:
-        """Initialize or reset the vector store."""
-        if reset and self.persist_dir.exists():
-            import gc
-
-            self.client = None
-            self.collection = None
-            gc.collect()
-            shutil.rmtree(self.persist_dir, ignore_errors=True)
-        self.persist_dir.mkdir(parents=True, exist_ok=True)
         self.client = chromadb.PersistentClient(
             path=str(self.persist_dir),
-            settings=Settings(anonymized_telemetry=False) if Settings else None,
+            settings=Settings(anonymized_telemetry=False),
         )
+
         try:
             self.collection = self.client.get_collection(
-                name=self.collection_name,
+                name=collection_name,
                 embedding_function=self.embedding_func,
             )
         except Exception:
             self.collection = self.client.create_collection(
-                name=self.collection_name,
+                name=collection_name,
                 embedding_function=self.embedding_func,
                 metadata={"hnsw:space": "cosine"},
             )
 
-    def reset_database(self) -> bool:
-        """Nuclear option: Delete and recreate database."""
-        self.initialize(reset=True)
-        return True
-
     def add_document(self, doc_data: Dict[str, Any]) -> int:
-        """Step 4: Generate embeddings with idempotency. Returns count of chunks added."""
-        if not self.collection:
-            raise RuntimeError("VectorStore not initialized. Call initialize() first.")
+        """Add document chunks to vector store with idempotency."""
         chunks = doc_data["chunks"]
-        existing_ids: set = set()
+        if not chunks:
+            return 0
+
+        # Idempotency: skip chunks already in DB
+        existing_ids = set()
         try:
             existing = self.collection.get()
             if existing and "ids" in existing:
                 existing_ids = set(existing["ids"])
         except Exception:
             pass
+
         new_chunks = [
             c
             for c in chunks
@@ -206,6 +87,7 @@ class VectorStore:
         ]
         if not new_chunks:
             return 0
+
         ids = [c["content_hash"] for c in new_chunks]
         texts = [c["text"] for c in new_chunks]
         metadatas = [
@@ -218,13 +100,12 @@ class VectorStore:
             }
             for c in new_chunks
         ]
+
         self.collection.add(ids=ids, documents=texts, metadatas=metadatas)
         return len(new_chunks)
 
     def query(self, query_text: str, n_results: int = 5) -> Dict[str, Any]:
-        """Retrieve context for RAG."""
-        if not self.collection:
-            raise RuntimeError("VectorStore not initialized. Call initialize() first.")
+        """Query the vector store."""
         return self.collection.query(
             query_texts=[query_text],
             n_results=n_results,
@@ -232,23 +113,19 @@ class VectorStore:
         )
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get database statistics."""
-        if not self.collection:
-            return {"chunks": 0, "status": "Not initialized", "path": str(self.persist_dir)}
+        """Get collection stats."""
         return {
             "chunks": self.collection.count(),
             "status": "Active",
             "path": str(self.persist_dir),
         }
 
-    def persist(self) -> Optional[Dict[str, Any]]:
-        """Step 5: Validation and manifest export."""
-        if not self.collection:
-            return None
+    def persist(self) -> Dict[str, Any] | None:
+        """Write manifest for audit."""
         count = self.collection.count()
         manifest = {
             "collection": self.collection_name,
-            "embedding_model": self.embedding_model,
+            "embedding_model": "all-MiniLM-L6-v2",
             "chunks_indexed": count,
             "storage_path": str(self.persist_dir),
         }
@@ -257,8 +134,6 @@ class VectorStore:
         return manifest
 
 
-def get_vector_store():
-    """Get initialized VectorStore. For use in RAG/GraphRAG pages."""
-    vs = VectorStore()
-    vs.initialize()
-    return vs
+def get_vector_store() -> VectorStore:
+    """Get initialized VectorStore for RAG pages."""
+    return safe_vector_store_init()

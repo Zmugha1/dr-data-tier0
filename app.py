@@ -5,11 +5,13 @@ Deterministic, Idempotent Document Processing Pipeline
 
 import json
 import shutil
-import time
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+
+from core.knowledge_graph import KnowledgeGraphBuilder
+from core.vector_store import safe_vector_store_init
 
 st.set_page_config(
     page_title="Dr Data - Tier 0 RAG/GraphRAG Lab",
@@ -17,111 +19,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# MUST BE FIRST: Handle reset before any ChromaDB imports
-if "reset_triggered" not in st.session_state:
-    st.session_state.reset_triggered = False
-    st.session_state.reset_success = False
-    st.session_state.reset_scope = "vector"  # "vector" | "full"
-    st.session_state.sidebar_reset_confirm = False
-
-# Check if we need to reset (from previous run) - runs BEFORE VectorStore import
-if st.session_state.reset_triggered and not st.session_state.reset_success:
-    from core.reset_utils import reset_vector_db_nuclear, reset_all_data_nuclear
-
-    if st.session_state.reset_scope == "full":
-        success, msg = reset_all_data_nuclear()
-    else:
-        success, msg = reset_vector_db_nuclear()
-
-    if success:
-        st.session_state.reset_success = True
-        st.session_state.reset_triggered = False
-        st.session_state.reset_scope = "vector"
-        st.success(f"✅ {msg}")
-        st.info("Reloading app...")
-        st.rerun()
-    else:
-        st.error(f"❌ Reset failed: {msg}")
-        _fail_path = str(Path(__file__).resolve().parent / "data" / "vector_db")
-        st.code(f"""
-Manual fix (run in terminal):
-taskkill /f /im python.exe 2>nul
-rd /s /q "{_fail_path}"
-streamlit run app.py
-""", language="batch")
-        st.stop()
-
 # Create data directories
 for dir_path in ["data/raw", "data/vector_db", "data/graph_store", "data/audit_logs"]:
     Path(dir_path).mkdir(parents=True, exist_ok=True)
 
-# NOW import the rest (after potential reset)
-from core.vector_store import VectorStore
-
-# Initialize VectorStore with error handling
-vector_store = None
-init_error = None
-
-try:
-    vector_store = VectorStore()
-    vector_store.initialize(reset=False)
-except Exception as e:
-    error_str = str(e).lower()
-    if "different settings" in error_str or "already exists" in error_str:
-        init_error = "settings_conflict"
-    else:
-        init_error = "other"
-        st.error(f"Initialization error: {e}")
-
-# UI for conflict resolution
-if init_error == "settings_conflict":
-    st.error("⚠️ Vector DB Settings Conflict")
-
-    st.warning("""
-The Vector DB was created with a different embedding model.
-
-**You must reset to continue.** The buttons below will force-delete the corrupted database.
-""")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("🗑️ FIX: Reset Vector DB", type="primary", use_container_width=True):
-            st.session_state.reset_triggered = True
-            st.session_state.reset_success = False
-            st.session_state.reset_scope = "vector"
-            st.rerun()
-
-    with col2:
-        if st.button("☢️ Full Reset", use_container_width=True):
-            st.session_state.reset_triggered = True
-            st.session_state.reset_success = False
-            st.session_state.reset_scope = "full"
-            st.rerun()
-
-    st.divider()
-    st.subheader("If buttons don't work (Windows File Lock):")
-    _db_path = str(Path(__file__).resolve().parent / "data" / "vector_db")
-    st.code(f"""
-1. Close this Streamlit window (Ctrl+C in terminal)
-2. Open Command Prompt as Administrator
-3. Run:
-   taskkill /f /im python.exe
-   rd /s /q "{_db_path}"
-4. cd to your project folder, then: streamlit run app.py
-""", language="batch")
-
-    st.stop()
-
-elif init_error == "other":
-    st.error("Fatal error initializing storage. Check logs.")
-    if st.button("Retry"):
-        st.rerun()
-    st.stop()
-
-elif vector_store is None:
-    st.error("Vector Store failed to initialize.")
-    st.stop()
+# Safe init: check for corruption before loading embedding model, delete if needed
+vector_store = safe_vector_store_init()
+kg_builder = KnowledgeGraphBuilder()
 
 st.title("🏥 Dr Data - Zero-Cloud AI Architecture Lab")
 st.markdown("""
@@ -162,22 +66,13 @@ with st.sidebar:
 
     st.divider()
     st.caption("🛠️ Maintenance")
-    if st.button("🔄 Reset Vector DB", help="Clear embeddings (keeps documents)"):
-        st.session_state.reset_triggered = True
-        st.session_state.reset_success = False
-        st.session_state.reset_scope = "vector"
+    if st.button("🗑️ Clear All Data", help="Delete processed data (vector DB + graph)"):
+        shutil.rmtree("data/vector_db", ignore_errors=True)
+        shutil.rmtree("data/graph_store", ignore_errors=True)
+        Path("data/vector_db").mkdir(parents=True, exist_ok=True)
+        Path("data/graph_store").mkdir(parents=True, exist_ok=True)
+        st.success("Cleared! Refreshing...")
         st.rerun()
-    with st.expander("Advanced"):
-        if st.button("☢️ Factory Reset", help="Clear everything"):
-            st.session_state.sidebar_reset_confirm = True
-        if st.session_state.get("sidebar_reset_confirm"):
-            if st.checkbox("Confirm delete all data", key="confirm_factory"):
-                if st.button("Execute Factory Reset"):
-                    st.session_state.reset_triggered = True
-                    st.session_state.reset_success = False
-                    st.session_state.reset_scope = "full"
-                    st.session_state.sidebar_reset_confirm = False
-                    st.rerun()
 
 # Main Tabs
 tab1, tab2, tab3 = st.tabs(["📤 Upload & Process", "📊 Pipeline Status", "🔍 Data Explorer"])
