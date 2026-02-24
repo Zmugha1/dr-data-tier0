@@ -5,12 +5,11 @@ Deterministic, Idempotent Document Processing Pipeline
 
 import json
 import shutil
+import time
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-
-from core.vector_store import VectorStore
 
 st.set_page_config(
     page_title="Dr Data - Tier 0 RAG/GraphRAG Lab",
@@ -18,127 +17,108 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# MUST BE FIRST: Handle reset before any ChromaDB imports
+if "reset_triggered" not in st.session_state:
+    st.session_state.reset_triggered = False
+    st.session_state.reset_success = False
+    st.session_state.reset_scope = "vector"  # "vector" | "full"
+    st.session_state.sidebar_reset_confirm = False
+
+# Check if we need to reset (from previous run) - runs BEFORE VectorStore import
+if st.session_state.reset_triggered and not st.session_state.reset_success:
+    from core.reset_utils import reset_vector_db_nuclear, reset_all_data_nuclear
+
+    if st.session_state.reset_scope == "full":
+        success, msg = reset_all_data_nuclear()
+    else:
+        success, msg = reset_vector_db_nuclear()
+
+    if success:
+        st.session_state.reset_success = True
+        st.session_state.reset_triggered = False
+        st.session_state.reset_scope = "vector"
+        st.success(f"✅ {msg}")
+        st.info("Reloading app...")
+        st.rerun()
+    else:
+        st.error(f"❌ Reset failed: {msg}")
+        st.code("""
+Manual fix (run in terminal):
+taskkill /f /im python.exe 2>nul
+rd /s /q data\\vector_db
+streamlit run app.py
+""", language="batch")
+        st.stop()
+
+# Create data directories
 for dir_path in ["data/raw", "data/vector_db", "data/graph_store", "data/audit_logs"]:
     Path(dir_path).mkdir(parents=True, exist_ok=True)
 
-# Session state for reset confirmations
-if "show_reset_confirm" not in st.session_state:
-    st.session_state.show_reset_confirm = False
-if "show_full_reset" not in st.session_state:
-    st.session_state.show_full_reset = False
-if "sidebar_reset_confirm" not in st.session_state:
-    st.session_state.sidebar_reset_confirm = False
-def reset_vector_db_raw():
-    """Reset vector DB by directly deleting folder (no VectorStore instantiation)."""
-    import gc
-    import time
+# NOW import the rest (after potential reset)
+from core.vector_store import VectorStore
 
-    db_path = Path("data/vector_db")
-    if db_path.exists():
-        gc.collect()
-        max_retries = 3
-        for i in range(max_retries):
-            try:
-                shutil.rmtree(db_path, ignore_errors=False)
-                break
-            except (PermissionError, OSError):
-                if i < max_retries - 1:
-                    time.sleep(0.5)
-                    gc.collect()
-                else:
-                    shutil.rmtree(db_path, ignore_errors=True)
-    db_path.mkdir(parents=True, exist_ok=True)
-    try:
-        vs = VectorStore()
-        vs.initialize(reset=False)
-        return True, None
-    except Exception as e:
-        return False, str(e)
-
-
-def reset_all_data_raw():
-    """Reset all data without instantiating existing corrupted stores."""
-    import gc
-
-    db_path = Path("data/vector_db")
-    if db_path.exists():
-        gc.collect()
-        shutil.rmtree(db_path, ignore_errors=True)
-        db_path.mkdir(parents=True, exist_ok=True)
-    kg_path = Path("data/graph_store")
-    if kg_path.exists():
-        shutil.rmtree(kg_path, ignore_errors=True)
-        kg_path.mkdir(parents=True, exist_ok=True)
-    try:
-        vs = VectorStore()
-        vs.initialize(reset=False)
-        return True, None
-    except Exception as e:
-        return False, str(e)
-
-
-# Try to initialize VectorStore
+# Initialize VectorStore with error handling
 vector_store = None
 init_error = None
+
 try:
     vector_store = VectorStore()
     vector_store.initialize(reset=False)
 except Exception as e:
-    error_msg = str(e).lower()
-    if "different settings" in error_msg or "already exists" in error_msg:
+    error_str = str(e).lower()
+    if "different settings" in error_str or "already exists" in error_str:
         init_error = "settings_conflict"
     else:
         init_error = "other"
-        st.error(f"Vector DB Error: {e}")
+        st.error(f"Initialization error: {e}")
 
-# Display reset UI if conflict detected
+# UI for conflict resolution
 if init_error == "settings_conflict":
-    st.error("⚠️ Vector DB Settings Conflict Detected")
+    st.error("⚠️ Vector DB Settings Conflict")
+
     st.warning("""
-    **What happened?**  
-    The Vector DB was created with different settings (embedding model mismatch).
+The Vector DB was created with a different embedding model.
 
-    **Click the button below to fix this.**
-    """)
+**You must reset to continue.** The buttons below will force-delete the corrupted database.
+""")
+
     col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🗑️ Reset Vector DB Only", type="primary", use_container_width=True):
-            with st.spinner("Force deleting corrupted database..."):
-                success, err = reset_vector_db_raw()
-                if success:
-                    st.success("✅ Reset complete! Reloading...")
-                    st.rerun()
-                else:
-                    st.error(f"Reset failed: {err}")
-                    st.info("Try closing the app and manually deleting the 'data/vector_db' folder")
-    with col2:
-        if st.button("☢️ Full System Reset", use_container_width=True):
-            st.session_state.show_full_reset = True
 
-    if st.session_state.show_full_reset:
-        st.warning("⚠️ This will delete ALL processed data including Knowledge Graph!")
-        confirm = st.checkbox("I understand this deletes all embeddings and graph data")
-        if confirm and st.button("Confirm Full Reset", type="primary"):
-            with st.spinner("Resetting everything..."):
-                success, err = reset_all_data_raw()
-                if success:
-                    st.success("✅ Full reset complete! Reloading...")
-                    st.rerun()
-                else:
-                    st.error(f"Failed: {err}")
+    with col1:
+        if st.button("🗑️ FIX: Reset Vector DB", type="primary", use_container_width=True):
+            st.session_state.reset_triggered = True
+            st.session_state.reset_success = False
+            st.session_state.reset_scope = "vector"
+            st.rerun()
+
+    with col2:
+        if st.button("☢️ Full Reset", use_container_width=True):
+            st.session_state.reset_triggered = True
+            st.session_state.reset_success = False
+            st.session_state.reset_scope = "full"
+            st.rerun()
 
     st.divider()
-    st.subheader("Emergency Manual Reset")
-    st.code("rd /s /q data\\vector_db\nmkdir data\\vector_db\nstreamlit run app.py", language="batch")
-    st.caption("Close Streamlit (Ctrl+C), then run in terminal if button fails.")
+    st.subheader("If buttons don't work (Windows File Lock):")
+    st.code("""
+1. Close this Streamlit window (Ctrl+C in terminal)
+2. Open Command Prompt as Administrator
+3. Run:
+   taskkill /f /im python.exe
+   rd /s /q "C:\\path\\to\\your\\app\\data\\vector_db"
+4. Restart: streamlit run app.py
+""", language="batch")
+
     st.stop()
+
 elif init_error == "other":
-    st.error("Failed to initialize Vector Store. Check the error message above.")
+    st.error("Fatal error initializing storage. Check logs.")
     if st.button("Retry"):
         st.rerun()
     st.stop()
+
 elif vector_store is None:
-    st.error("Vector Store unavailable. Use reset buttons in sidebar.")
+    st.error("Vector Store failed to initialize.")
     st.stop()
 
 st.title("🏥 Dr Data - Zero-Cloud AI Architecture Lab")
@@ -181,24 +161,21 @@ with st.sidebar:
     st.divider()
     st.caption("🛠️ Maintenance")
     if st.button("🔄 Reset Vector DB", help="Clear embeddings (keeps documents)"):
-        success, err = reset_vector_db_raw()
-        if success:
-            st.success("Vector DB cleared!")
-            st.rerun()
-        else:
-            st.error(f"Failed: {err}")
+        st.session_state.reset_triggered = True
+        st.session_state.reset_success = False
+        st.session_state.reset_scope = "vector"
+        st.rerun()
     with st.expander("Advanced"):
         if st.button("☢️ Factory Reset", help="Clear everything"):
             st.session_state.sidebar_reset_confirm = True
-        if st.session_state.sidebar_reset_confirm:
+        if st.session_state.get("sidebar_reset_confirm"):
             if st.checkbox("Confirm delete all data", key="confirm_factory"):
                 if st.button("Execute Factory Reset"):
-                    success, err = reset_all_data_raw()
-                    if success:
-                        st.success("Factory reset complete!")
-                        st.rerun()
-                    else:
-                        st.error(f"Failed: {err}")
+                    st.session_state.reset_triggered = True
+                    st.session_state.reset_success = False
+                    st.session_state.reset_scope = "full"
+                    st.session_state.sidebar_reset_confirm = False
+                    st.rerun()
 
 # Main Tabs
 tab1, tab2, tab3 = st.tabs(["📤 Upload & Process", "📊 Pipeline Status", "🔍 Data Explorer"])
