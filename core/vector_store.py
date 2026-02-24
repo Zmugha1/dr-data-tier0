@@ -159,7 +159,12 @@ class VectorStore:
     def initialize(self, reset: bool = False) -> None:
         """Initialize or reset the vector store."""
         if reset and self.persist_dir.exists():
-            shutil.rmtree(self.persist_dir)
+            import gc
+
+            self.client = None
+            self.collection = None
+            gc.collect()
+            shutil.rmtree(self.persist_dir, ignore_errors=True)
         self.persist_dir.mkdir(parents=True, exist_ok=True)
         self.client = chromadb.PersistentClient(
             path=str(self.persist_dir),
@@ -178,11 +183,8 @@ class VectorStore:
             )
 
     def reset_database(self) -> bool:
-        """Nuclear option: Delete and recreate."""
-        if self.persist_dir.exists():
-            shutil.rmtree(self.persist_dir)
-        self.persist_dir.mkdir(parents=True, exist_ok=True)
-        self.initialize()
+        """Nuclear option: Delete and recreate database."""
+        self.initialize(reset=True)
         return True
 
     def add_document(self, doc_data: Dict[str, Any]) -> int:
@@ -256,18 +258,7 @@ class VectorStore:
 
 
 def get_vector_store():
-    """Get initialized VectorStore. Cached per Streamlit session."""
-    try:
-        import streamlit as st
-
-        @st.cache_resource
-        def _cached():
-            vs = VectorStore()
-            vs.initialize()
-            return vs
-
-        return _cached()
-    except ImportError:
-        vs = VectorStore()
-        vs.initialize()
-        return vs
+    """Get initialized VectorStore. For use in RAG/GraphRAG pages."""
+    vs = VectorStore()
+    vs.initialize()
+    return vs

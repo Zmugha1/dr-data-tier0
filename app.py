@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from core.vector_store import VectorStore, get_vector_store
+from core.vector_store import VectorStore
 
 st.set_page_config(
     page_title="Dr Data - Tier 0 RAG/GraphRAG Lab",
@@ -21,21 +21,25 @@ st.set_page_config(
 for dir_path in ["data/raw", "data/vector_db", "data/graph_store", "data/audit_logs"]:
     Path(dir_path).mkdir(parents=True, exist_ok=True)
 
+# Session state for reset confirmations
+if "show_reset_confirm" not in st.session_state:
+    st.session_state.show_reset_confirm = False
+if "sidebar_reset_confirm" not in st.session_state:
+    st.session_state.sidebar_reset_confirm = False
+
 
 def reset_vector_db():
-    """Reset the vector database."""
+    """Reset the vector database safely."""
     try:
         vs = VectorStore()
         vs.reset_database()
-        st.cache_resource.clear()
-        return True
+        return True, None
     except Exception as e:
-        st.error(f"Reset failed: {e}")
-        return False
+        return False, str(e)
 
 
 def reset_all_data():
-    """Reset all data stores (vector DB + knowledge graph)."""
+    """Reset all data stores including knowledge graph."""
     try:
         vs = VectorStore()
         vs.reset_database()
@@ -43,53 +47,69 @@ def reset_all_data():
         if kg_path.exists():
             shutil.rmtree(kg_path)
             kg_path.mkdir(parents=True, exist_ok=True)
-        st.cache_resource.clear()
-        return True
+        return True, None
     except Exception as e:
-        st.error(f"Full reset failed: {e}")
-        return False
+        return False, str(e)
 
 
-# Initialize vector store; handle conflicts
+# Try to initialize VectorStore
 vector_store = None
 init_error = None
 try:
-    vector_store = get_vector_store()
+    vector_store = VectorStore()
+    vector_store.initialize(reset=False)
 except Exception as e:
-    err_str = str(e).lower()
-    if "different settings" in err_str or "already exists" in err_str or "conflict" in err_str:
+    error_msg = str(e).lower()
+    if "different settings" in error_msg or "already exists" in error_msg:
         init_error = "settings_conflict"
     else:
         init_error = "other"
         st.error(f"Vector DB Error: {e}")
 
+# Display reset UI if conflict detected
 if init_error == "settings_conflict":
     st.error("⚠️ Vector DB Settings Conflict Detected")
     st.warning("""
-    The Vector DB was created with different settings (likely from a previous version).
-    You need to reset it to use the current configuration.
+    **What happened?**  
+    The Vector DB was created with different settings (likely from a previous version or different embedding model).
 
-    **What will be lost:** Previously indexed embeddings (documents in /data/raw/ are preserved)
-    **What will be kept:** Original uploaded documents, Knowledge Graph (unless Full Reset)
+    **What will be lost:** Previously indexed embeddings (vector search index)
+
+    **What will be kept:** Original uploaded documents (in `/data/raw/`), Knowledge Graph (unless Full Reset)
     """)
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🗑️ Reset Vector DB Only", type="primary", use_container_width=True):
-            with st.spinner("Resetting..."):
-                if reset_vector_db():
-                    st.success("✅ Vector DB reset!")
+            with st.spinner("Resetting Vector DB..."):
+                success, err = reset_vector_db()
+                if success:
+                    st.success("✅ Vector DB reset successfully!")
                     st.rerun()
+                else:
+                    st.error(f"Reset failed: {err}")
     with col2:
         if st.button("☢️ Full System Reset", use_container_width=True):
-            with st.spinner("Resetting all..."):
-                if reset_all_data():
+            st.session_state.show_reset_confirm = True
+
+    if st.session_state.show_reset_confirm:
+        st.warning("⚠️ This will delete ALL processed data including Knowledge Graph!")
+        confirm = st.checkbox("I understand this deletes all embeddings and graph data")
+        if confirm and st.button("Confirm Full Reset", type="primary"):
+            with st.spinner("Performing full reset..."):
+                success, err = reset_all_data()
+                if success:
                     st.success("✅ Full reset complete!")
                     st.rerun()
+                else:
+                    st.error(f"Reset failed: {err}")
     st.stop()
-elif vector_store is None and init_error == "other":
-    st.error("Failed to initialize Vector Store. Check logs.")
+elif init_error == "other":
+    st.error("Failed to initialize Vector Store. Check the error message above.")
     if st.button("Retry"):
         st.rerun()
+    st.stop()
+elif vector_store is None:
+    st.error("Vector Store unavailable. Use reset buttons in sidebar.")
     st.stop()
 
 st.title("🏥 Dr Data - Zero-Cloud AI Architecture Lab")
@@ -130,15 +150,26 @@ with st.sidebar:
         st.warning("🟡 Knowledge Graph Empty")
 
     st.divider()
-    st.caption("Maintenance")
-    if st.button("🔄 Reset Vector DB", help="Clear all embeddings (keeps documents)"):
-        if reset_vector_db():
+    st.caption("🛠️ Maintenance")
+    if st.button("🔄 Reset Vector DB", help="Clear embeddings (keeps documents)"):
+        success, err = reset_vector_db()
+        if success:
             st.success("Vector DB cleared!")
             st.rerun()
-    if st.button("☢️ Factory Reset", help="Clear vector DB + knowledge graph"):
-        if reset_all_data():
-            st.success("System reset!")
-            st.rerun()
+        else:
+            st.error(f"Failed: {err}")
+    with st.expander("Advanced"):
+        if st.button("☢️ Factory Reset", help="Clear everything"):
+            st.session_state.sidebar_reset_confirm = True
+        if st.session_state.sidebar_reset_confirm:
+            if st.checkbox("Confirm delete all data", key="confirm_factory"):
+                if st.button("Execute Factory Reset"):
+                    success, err = reset_all_data()
+                    if success:
+                        st.success("Factory reset complete!")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed: {err}")
 
 # Main Tabs
 tab1, tab2, tab3 = st.tabs(["📤 Upload & Process", "📊 Pipeline Status", "🔍 Data Explorer"])
