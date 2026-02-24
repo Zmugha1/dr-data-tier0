@@ -42,10 +42,11 @@ if st.session_state.reset_triggered and not st.session_state.reset_success:
         st.rerun()
     else:
         st.error(f"❌ Reset failed: {msg}")
-        st.code("""
+        _fail_path = str(Path(__file__).resolve().parent / "data" / "vector_db")
+        st.code(f"""
 Manual fix (run in terminal):
 taskkill /f /im python.exe 2>nul
-rd /s /q data\\vector_db
+rd /s /q "{_fail_path}"
 streamlit run app.py
 """, language="batch")
         st.stop()
@@ -100,13 +101,14 @@ The Vector DB was created with a different embedding model.
 
     st.divider()
     st.subheader("If buttons don't work (Windows File Lock):")
-    st.code("""
+    _db_path = str(Path(__file__).resolve().parent / "data" / "vector_db")
+    st.code(f"""
 1. Close this Streamlit window (Ctrl+C in terminal)
 2. Open Command Prompt as Administrator
 3. Run:
    taskkill /f /im python.exe
-   rd /s /q "C:\\path\\to\\your\\app\\data\\vector_db"
-4. Restart: streamlit run app.py
+   rd /s /q "{_db_path}"
+4. cd to your project folder, then: streamlit run app.py
 """, language="batch")
 
     st.stop()
